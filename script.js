@@ -1,6 +1,5 @@
 // SportSpark Live - Expert JS
-// API Key
-const API_KEY = 'a31b0355d3504160ad0348a74931a1a0';
+const API_KEY = '6d3559b8cb2f476fae444c696e1f0d93';  // YOUR NEW KEY!
 
 // DOM Elements
 const matchesContainer = document.getElementById('matches-container');
@@ -15,20 +14,21 @@ const searchInput = document.getElementById('search-input');
 const searchBtn = document.getElementById('search-btn');
 const darkModeBtn = document.getElementById('dark-mode-btn');
 
-// Format Time in WAT
+// Format Time
 function formatTime(date) {
   return date.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Lagos' });
 }
 
-// Update Timestamp
 function updateTimestamp(element) {
   element.textContent = formatTime(new Date());
 }
 
-// Fetch Data
+// Fetch with CORS fix
 async function fetchData(url) {
   try {
-    const response = await fetch(url, { headers: { 'X-Auth-Token': API_KEY } });
+    const response = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`, {
+      headers: { 'X-Auth-Token': API_KEY }
+    });
     if (!response.ok) throw new Error('API Error');
     return await response.json();
   } catch (error) {
@@ -37,20 +37,19 @@ async function fetchData(url) {
   }
 }
 
-// Render Match Card
+// Render Match
 function renderMatch(match, container, isUpcoming = false) {
   const home = match.homeTeam.shortName || match.homeTeam.name;
   const away = match.awayTeam.shortName || match.awayTeam.name;
   const homeLogo = match.homeTeam.crest ? `<img src="${match.homeTeam.crest}" alt="${home}">` : '';
   const awayLogo = match.awayTeam.crest ? `<img src="${match.awayTeam.crest}" alt="${away}">` : '';
-  let score = '0 - 0';
-  let status = 'LIVE';
-  if (!isUpcoming) {
-    score = match.score.fullTime.home !== null ? `${match.score.fullTime.home} - ${match.score.fullTime.away}` : '0 - 0';
-    status = match.status === 'IN_PLAY' ? 'LIVE' : 'HT';
-  } else {
-    score = new Date(match.utcDate).toLocaleString('en-NG', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Africa/Lagos' });
+  let score = '0 - 0', status = 'LIVE';
+  if (isUpcoming) {
+    score = new Date(match.utcDate).toLocaleString('en-NG', { dateStyle: 'short', timeStyle: 'short' });
     status = 'UPCOMING';
+  } else {
+    score = (match.score.fullTime.home ?? 0) + ' - ' + (match.score.fullTime.away ?? 0);
+    status = match.status === 'IN_PLAY' ? 'LIVE' : 'HT';
   }
 
   const card = document.createElement('div');
@@ -72,24 +71,22 @@ function renderMatch(match, container, isUpcoming = false) {
   container.appendChild(card);
 }
 
-// Load Live Matches
+// Load functions
 async function loadLiveMatches() {
-  matchesContainer.innerHTML = '<div class="match-card loading"><p>Fetching live matches...</p></div>';
+  matchesContainer.innerHTML = '<div class="match-card loading"><p>Fetching...</p></div>';
   const data = await fetchData('https://api.football-data.org/v4/matches');
   matchesContainer.innerHTML = '';
-  if (!data || data.matches.length === 0) {
+  if (!data || !data.matches.filter(m => m.status === 'IN_PLAY' || m.status === 'PAUSED').length) {
     noMatchesLive.classList.remove('hidden');
     return;
   }
   noMatchesLive.classList.add('hidden');
-  const live = data.matches.filter(m => m.status === 'IN_PLAY' || m.status === 'PAUSED');
-  live.forEach(m => renderMatch(m, matchesContainer));
+  data.matches.filter(m => m.status === 'IN_PLAY' || m.status === 'PAUSED').forEach(m => renderMatch(m, matchesContainer));
   updateTimestamp(lastUpdatedLive);
 }
 
-// Load Upcoming Matches
 async function loadUpcoming() {
-  upcomingContainer.innerHTML = '<div class="match-card loading"><p>Fetching upcoming fixtures...</p></div>';
+  upcomingContainer.innerHTML = '<div class="match-card loading"><p>Fetching...</p></div>';
   const data = await fetchData('https://api.football-data.org/v4/matches?status=SCHEDULED');
   upcomingContainer.innerHTML = '';
   if (!data || data.matches.length === 0) {
@@ -97,63 +94,49 @@ async function loadUpcoming() {
     return;
   }
   noUpcoming.classList.add('hidden');
-  data.matches.forEach(m => renderMatch(m, upcomingContainer, true));
+  data.matches.slice(0, 10).forEach(m => renderMatch(m, upcomingContainer, true));
   updateTimestamp(lastUpdatedUpcoming);
 }
 
-// Load Standings
 async function loadStandings(code) {
-  standingsBody.innerHTML = '<tr><td colspan="6">Loading standings...</td></tr>';
+  standingsBody.innerHTML = '<tr><td colspan="6">Loading...</td></tr>';
   const data = await fetchData(`https://api.football-data.org/v4/competitions/${code}/standings`);
   standingsBody.innerHTML = '';
-  if (!data || !data.standings) {
-    standingsBody.innerHTML = '<tr><td colspan="6">No standings available.</td></tr>';
+  if (!data || !data.standings || !data.standings[0]) {
+    standingsBody.innerHTML = '<tr><td colspan="6">No standings.</td></tr>';
     return;
   }
-  data.standings[0].table.forEach((team, index) => {
-    const logo = team.team.crest ? `<img src="${team.team.crest}" alt="">` : '';
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${index + 1}</td>
-      <td>${logo}${team.team.shortName || team.team.name}</td>
-      <td>${team.points}</td>
-      <td>${team.won}</td>
-      <td>${team.draw}</td>
-      <td>${team.lost}</td>
-    `;
-    standingsBody.appendChild(row);
+  data.standings[0].table.forEach((t, i) => {
+    const logo = t.team.crest ? `<img src="${t.team.crest}" alt="">` : '';
+    const row = `<tr><td>${i+1}</td><td>${logo} ${t.team.shortName || t.team.name}</td><td>${t.points}</td><td>${t.won}</td><td>${t.draw}</td><td>${t.lost}</td></tr>`;
+    standingsBody.innerHTML += row;
   });
 }
 
-// Perform Search
 function performSearch() {
-  const query = searchInput.value.toLowerCase();
-  [matchesContainer, upcomingContainer].forEach(container => {
-    Array.from(container.children).forEach(card => {
-      const text = card.textContent.toLowerCase();
-      card.style.display = text.includes(query) ? '' : 'none';
+  const q = searchInput.value.toLowerCase();
+  [matchesContainer, upcomingContainer].forEach(c => {
+    Array.from(c.children).forEach(card => {
+      card.style.display = card.textContent.toLowerCase().includes(q) ? '' : 'none';
     });
   });
 }
 
-// Dark Mode Toggle (Fixed to Work)
+// Dark Mode
 darkModeBtn.addEventListener('change', () => {
   document.body.setAttribute('data-theme', darkModeBtn.checked ? 'dark' : 'light');
 });
 
-// Event Listeners
+// Listeners
 leagueSelect.addEventListener('change', () => loadStandings(leagueSelect.value));
 searchBtn.addEventListener('click', performSearch);
-searchInput.addEventListener('keyup', (e) => {
-  if (e.key === 'Enter') performSearch();
-});
+searchInput.addEventListener('keyup', e => e.key === 'Enter' && performSearch());
 
-// Initial Load
+// Start
 loadLiveMatches();
 loadUpcoming();
-loadStandings('PL');  // Default EPL
+loadStandings('PL');
 
-// Auto Refresh
 setInterval(() => {
   loadLiveMatches();
   loadUpcoming();
